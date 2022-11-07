@@ -18,6 +18,8 @@ load_dotenv()
 
 MONGODB_URI = os.getenv("MONGODB_URI")
 assert MONGODB_URI is not None, "MONGODB_URI is not set"
+PASSWORD = os.getenv("ACCESS_PASS")
+assert PASSWORD is not None, "ACCESS_PASS is not set"
 
 client = MongoClient(MONGODB_URI)
 db = client.bussepricing
@@ -25,6 +27,35 @@ db = client.bussepricing
 contracts = db.get_collection("contract_prices")
 costs = db.get_collection("costs")
 customers = db.get_collection("customers")
+
+
+def check_password():
+    """Returns `True` if the user had the correct password."""
+
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        if st.session_state["password"] == PASSWORD:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # don't store password
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        # First run, show input for password.
+        st.text_input(
+            "Password", type="password", on_change=password_entered, key="password"
+        )
+        return False
+    elif not st.session_state["password_correct"]:
+        # Password not correct, show input + error.
+        st.text_input(
+            "Password", type="password", on_change=password_entered, key="password"
+        )
+        st.error("😕 Password incorrect")
+        return False
+    else:
+        # Password correct.
+        return True
 
 
 def filter_pricingagreements(df, item):
@@ -130,9 +161,11 @@ def get_customer(customerName):
 
 
 @st.cache
-def load_data(item: str, contractend: str):
+def load_data(item: str, contractend: datetime):
     try:
-        contractend = datetime.strptime(contractend, "%Y-%m-%d")
+        if type(contractend) is str:
+            contractend = datetime.strptime(contractend, "%Y-%m-%d")
+
     except Exception:
         raise ValueError("Invalid contract end date, format should be YYYY-MM-DD")
 
@@ -189,8 +222,17 @@ def load_data(item: str, contractend: str):
     return df
 
 
-text_item_input = st.text_input("Item")
-text_contractend_input = st.text_input("Contract end date YYYY-MM-DD")
+if "item" not in st.session_state:
+    st.session_state.item = ""
+if "contractend" not in st.session_state:
+    st.session_state.contractend = datetime.now()
+
+with st.form(key="my_form"):
+    st.session_state.item = st.text_input(label="Item", value=st.session_state.item)
+    st.session_state.contractend = st.date_input(
+        label="Contract End", value=st.session_state.contractend
+    )
+    submitted = st.form_submit_button(label="Submit")
 
 
 def to_excel(df: pd.DataFrame):
@@ -202,9 +244,12 @@ def to_excel(df: pd.DataFrame):
     return processed_data
 
 
-if text_item_input and text_contractend_input:
+if st.session_state.item and st.session_state.contractend and check_password():
     data_load_state = st.text("Loading data...")
-    df = load_data(item=text_item_input, contractend=text_contractend_input)
+    df = load_data(
+        item=st.session_state.item,
+        contractend=datetime.combine(st.session_state.contractend, datetime.min.time()),
+    )
     data_load_state.text("Loading data...done!")
 
     # create excel file for download in bytespace
@@ -228,7 +273,7 @@ if text_item_input and text_contractend_input:
     st.download_button(
         label="📥 Download Current Result",
         data=df_xlsx,
-        file_name=f"Item {text_item_input} - Expiring after {text_contractend_input}.xlsx",
+        file_name=f"Item {st.session_state.item} - Expiring after {st.session_state.contractend:%Y-%m-%d}.xlsx",
     )
 
     st.markdown("## Pricing Agreements")
