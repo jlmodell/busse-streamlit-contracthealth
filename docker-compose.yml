@@ -1,0 +1,9 @@
+version: "3.8"
+
+services:
+  streamlit:
+    container_name: contracts_health_check
+    build: .
+    ports:
+      - 8502:8501
+    restart: unless-stopped
